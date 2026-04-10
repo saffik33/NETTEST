@@ -1,8 +1,11 @@
 import asyncio
+import logging
 import re
 from dataclasses import dataclass
 
 from app.core.platform_utils import is_windows
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -31,6 +34,7 @@ class WiFiNetwork:
 
 async def get_wifi_info() -> WiFiData | None:
     if not is_windows():
+        logger.warning("WiFi scanning requires a local Windows machine with wireless hardware")
         return None
 
     process = await asyncio.create_subprocess_exec(
@@ -69,6 +73,7 @@ async def get_wifi_info() -> WiFiData | None:
 
 async def get_wifi_networks() -> list[WiFiNetwork]:
     if not is_windows():
+        logger.warning("WiFi scanning requires a local Windows machine with wireless hardware")
         return []
 
     process = await asyncio.create_subprocess_exec(

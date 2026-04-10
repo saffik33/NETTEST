@@ -11,7 +11,7 @@ from app.models.dns_test import DNSResult
 from app.models.device_scan import DeviceScan, DiscoveredDevice
 from app.models.ping_test import PingResult
 from app.models.speed_test import SpeedTestResult
-from app.models.test_session import TestSession
+from app.models.test_session import TestSession, TestStatus
 from app.models.traceroute import TracerouteHop, TracerouteResult
 from app.models.wifi_info import WiFiSnapshot
 from app.services.alert_service import evaluate_alerts
@@ -121,7 +121,7 @@ async def run_full_test(
         session = await db.get(TestSession, session_id)
         if session:
             session.completed_at = datetime.now(timezone.utc)
-            session.status = "partial" if errors else "completed"
+            session.status = TestStatus.PARTIAL if errors else TestStatus.COMPLETED
             if errors:
                 session.error_message = "; ".join(errors)
             await db.commit()
@@ -157,7 +157,7 @@ async def run_full_test(
         try:
             session = await db.get(TestSession, session_id)
             if session:
-                session.status = "failed"
+                session.status = TestStatus.FAILED
                 session.error_message = str(e)
                 session.completed_at = datetime.now(timezone.utc)
                 await db.commit()

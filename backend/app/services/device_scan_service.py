@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 
 from mac_vendor_lookup import MacLookup
 
+from app.core.platform_utils import is_windows
+
 logger = logging.getLogger(__name__)
 
 
@@ -28,6 +30,10 @@ _mac_lookup = MacLookup()
 
 
 async def scan_devices() -> ScanData:
+    if not is_windows():
+        logger.warning("Device scanning not available on this platform (requires local network)")
+        return ScanData()
+
     process = await asyncio.create_subprocess_exec(
         "arp", "-a",
         stdout=asyncio.subprocess.PIPE,

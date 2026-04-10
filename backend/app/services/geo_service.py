@@ -1,18 +1,19 @@
 """IP geolocation service with in-memory cache for traceroute map."""
 
-import asyncio
 import logging
+import time
 from dataclasses import dataclass
 
 import httpx
 
 logger = logging.getLogger(__name__)
 
-# Simple in-memory cache: IP -> GeoLocation
-_cache: dict[str, "GeoLocation | None"] = {}
+_CACHE_TTL = 300  # 5 minutes for failed lookups
+_CACHE_TTL_SUCCESS = 86400  # 24 hours for successful lookups
+_cache: dict[str, tuple["GeoLocation | None", float]] = {}
 
-GEO_API_URL = "http://ip-api.com/json/{ip}?fields=status,country,city,lat,lon,isp,as,query"
-BATCH_API_URL = "http://ip-api.com/batch?fields=status,country,city,lat,lon,isp,as,query"
+GEO_API_URL = "https://ip-api.com/json/{ip}?fields=status,country,city,lat,lon,isp,as,query"
+BATCH_API_URL = "https://ip-api.com/batch?fields=status,country,city,lat,lon,isp,as,query"
 
 
 @dataclass
@@ -55,7 +56,11 @@ async def geolocate_ip(ip: str) -> GeoLocation | None:
         return None
 
     if ip in _cache:
-        return _cache[ip]
+        cached_value, cached_time = _cache[ip]
+        ttl = _CACHE_TTL_SUCCESS if cached_value is not None else _CACHE_TTL
+        if time.monotonic() - cached_time < ttl:
+            return cached_value
+        del _cache[ip]
 
     try:
         async with httpx.AsyncClient(timeout=5) as client:
@@ -72,14 +77,14 @@ async def geolocate_ip(ip: str) -> GeoLocation | None:
                 isp=data.get("isp"),
                 asn=data.get("as"),
             )
-            _cache[ip] = geo
+            _cache[ip] = (geo, time.monotonic())
             return geo
 
-        _cache[ip] = None
+        _cache[ip] = (None, time.monotonic())
         return None
     except Exception as e:
         logger.debug("Geolocation failed for %s: %s", ip, e)
-        _cache[ip] = None
+        _cache[ip] = (None, time.monotonic())
         return None
 
 
@@ -92,7 +97,13 @@ async def geolocate_batch(ips: list[str]) -> dict[str, GeoLocation | None]:
         if _is_private_ip(ip):
             result[ip] = None
         elif ip in _cache:
-            result[ip] = _cache[ip]
+            cached_value, cached_time = _cache[ip]
+            ttl = _CACHE_TTL_SUCCESS if cached_value is not None else _CACHE_TTL
+            if time.monotonic() - cached_time < ttl:
+                result[ip] = cached_value
+            else:
+                del _cache[ip]
+                uncached.append(ip)
         else:
             uncached.append(ip)
 
@@ -120,10 +131,10 @@ async def geolocate_batch(ips: list[str]) -> dict[str, GeoLocation | None]:
                     isp=item.get("isp"),
                     asn=item.get("as"),
                 )
-                _cache[ip] = geo
+                _cache[ip] = (geo, time.monotonic())
                 result[ip] = geo
             else:
-                _cache[ip] = None
+                _cache[ip] = (None, time.monotonic())
                 result[ip] = None
     except Exception as e:
         logger.warning("Batch geolocation failed: %s", e)

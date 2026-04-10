@@ -1,5 +1,10 @@
 import json
+import logging
+
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -9,6 +14,9 @@ class Settings(BaseSettings):
     DEFAULT_DNS_TARGETS: str = '["google.com","cloudflare.com","github.com"]'
     DEFAULT_TRACEROUTE_TARGET: str = "8.8.8.8"
     SPEED_TEST_TIMEOUT: int = 60
+    PORT: int = 8000
+    API_KEY: str = ""
+    LOG_LEVEL: str = "INFO"
 
     SMTP_HOST: str = ""
     SMTP_PORT: int = 587
@@ -16,6 +24,22 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str = ""
     SMTP_USE_TLS: bool = True
     SMTP_FROM_EMAIL: str = ""
+
+    @model_validator(mode="after")
+    def validate_json_fields(self) -> "Settings":
+        try:
+            json.loads(self.CORS_ORIGINS)
+        except (json.JSONDecodeError, TypeError):
+            raise ValueError(
+                f"CORS_ORIGINS must be a JSON array, got: {self.CORS_ORIGINS!r}"
+            )
+        try:
+            json.loads(self.DEFAULT_DNS_TARGETS)
+        except (json.JSONDecodeError, TypeError):
+            raise ValueError(
+                f"DEFAULT_DNS_TARGETS must be a JSON array, got: {self.DEFAULT_DNS_TARGETS!r}"
+            )
+        return self
 
     @property
     def cors_origins_list(self) -> list[str]:

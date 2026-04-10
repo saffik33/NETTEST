@@ -1,19 +1,21 @@
 from datetime import datetime, timedelta, timezone
 
+import sqlalchemy as sa
 from fastapi import APIRouter, Depends
-from sqlalchemy import func, select, cast, Integer
+from sqlalchemy import extract, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
+from app.database import _is_sqlite, get_db
 from app.models.ping_test import PingResult
 from app.models.speed_test import SpeedTestResult
 from app.services.health_score_service import compute_health_score, get_score_timeline
+from app.schemas.dashboard import DashboardSummaryResponse, HealthScoreResponse
 from app.services.uptime_service import get_probe_history, get_uptime_stats
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 
-@router.get("/summary")
+@router.get("/summary", response_model=DashboardSummaryResponse)
 async def dashboard_summary(period: str = "24h", db: AsyncSession = Depends(get_db)):
     period_map = {"24h": 1, "7d": 7, "30d": 30}
     days = period_map.get(period, 1)
@@ -77,10 +79,17 @@ async def dashboard_heatmap(
     else:
         return {"data": []}
 
+    if _is_sqlite:
+        day_col = func.strftime("%w", ts_col).label("day_of_week")
+        hour_col = func.strftime("%H", ts_col).label("hour_of_day")
+    else:
+        day_col = extract("dow", ts_col).cast(sa.String).label("day_of_week")
+        hour_col = extract("hour", ts_col).cast(sa.String).label("hour_of_day")
+
     result = await db.execute(
         select(
-            func.strftime("%w", ts_col).label("day_of_week"),
-            func.strftime("%H", ts_col).label("hour_of_day"),
+            day_col,
+            hour_col,
             func.avg(col).label("avg_value"),
             func.count().label("sample_count"),
         )
@@ -104,11 +113,11 @@ async def dashboard_heatmap(
     }
 
 
-@router.get("/health-score")
+@router.get("/health-score", response_model=HealthScoreResponse)
 async def dashboard_health_score(period: str = "24h", db: AsyncSession = Depends(get_db)):
     score = await compute_health_score(db, period)
     if score is None:
-        return {"score": None, "message": "No test data available for this period"}
+        return {"score": None, "message": "No test data available for this period", "period": period}
     return {
         "overall": score.overall,
         "breakdown": {

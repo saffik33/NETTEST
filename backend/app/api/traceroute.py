@@ -1,14 +1,16 @@
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.models.test_session import TestSession
+from app.models.test_session import TestSession, TestStatus, TriggerType
 from app.models.traceroute import TracerouteHop, TracerouteResult
 from app.schemas.traceroute import TracerouteDetailOut, TracerouteResultOut
 from app.services.geo_service import geolocate_batch
@@ -16,6 +18,7 @@ from app.services.traceroute_service import run_traceroute
 
 logger = logging.getLogger(__name__)
 
+limiter = Limiter(key_func=get_remote_address)
 router = APIRouter(prefix="/traceroute", tags=["traceroute"])
 
 
@@ -24,10 +27,11 @@ class TracerouteRunRequest(BaseModel):
 
 
 @router.post("/run")
-async def run_traceroute_standalone(request: TracerouteRunRequest, db: AsyncSession = Depends(get_db)):
+@limiter.limit("5/minute")
+async def run_traceroute_standalone(request: TracerouteRunRequest, req: Request, db: AsyncSession = Depends(get_db)):
     """Run a standalone traceroute to a target host."""
     # Create a minimal test session to satisfy the FK constraint
-    session = TestSession(trigger_type="manual", status="running")
+    session = TestSession(trigger_type=TriggerType.MANUAL, status=TestStatus.RUNNING)
     db.add(session)
     await db.flush()
 
@@ -55,13 +59,13 @@ async def run_traceroute_standalone(request: TracerouteRunRequest, db: AsyncSess
                 timed_out=hop.timed_out,
             ))
 
-        session.status = "completed"
+        session.status = TestStatus.COMPLETED
         session.completed_at = datetime.now(timezone.utc)
         await db.commit()
 
         return {"traceroute_id": tr.id, "target": data.target_host, "total_hops": data.total_hops, "completed": data.completed}
     except Exception as e:
-        session.status = "failed"
+        session.status = TestStatus.FAILED
         session.error_message = str(e)
         await db.commit()
         logger.error("Standalone traceroute failed: %s", e)

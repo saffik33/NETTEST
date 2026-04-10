@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import toast from 'react-hot-toast'
 import { wsClient } from '../api/websocket'
 import type { WSMessage } from '../api/websocket'
 import { useRealtimeStore } from '../stores/realtimeStore'
@@ -30,6 +31,9 @@ export function useWebSocket() {
           break
         case 'test_failed':
           store.setTestFailed(payload.error as string)
+          break
+        case 'alert_triggered':
+          toast.error(payload.message as string || 'Alert threshold exceeded')
           break
       }
     })

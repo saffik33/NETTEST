@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import Integer, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.platform_utils import get_ping_command
 from app.core.ws_manager import ws_manager
 from app.database import AsyncSessionLocal
 from app.models.uptime import OutageEvent, UptimeProbe
@@ -27,8 +28,9 @@ _current_outage_id: int | None = None
 async def _ping_probe(target: str) -> tuple[bool, float | None]:
     """Single ICMP probe. Returns (is_up, latency_ms)."""
     try:
+        cmd = get_ping_command(target, 1)
         process = await asyncio.create_subprocess_exec(
-            "ping", "-n", "1", "-w", "3000", target,
+            *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -50,9 +52,9 @@ async def _probe_loop() -> None:
     global _consecutive_failures, _current_outage_id
 
     while _running:
-        is_up, latency = await _ping_probe(PROBE_TARGET)
-
         try:
+            is_up, latency = await _ping_probe(PROBE_TARGET)
+
             async with AsyncSessionLocal() as db:
                 probe = UptimeProbe(
                     is_up=is_up,
@@ -77,6 +79,7 @@ async def _probe_loop() -> None:
                         logger.warning("Outage detected (id=%d)", outage.id)
                         await ws_manager.broadcast({
                             "type": "outage_started",
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
                             "payload": {"outage_id": outage.id},
                         })
                 else:
@@ -96,6 +99,7 @@ async def _probe_loop() -> None:
                             )
                             await ws_manager.broadcast({
                                 "type": "outage_resolved",
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
                                 "payload": {
                                     "outage_id": _current_outage_id,
                                     "duration_seconds": outage.duration_seconds,
@@ -106,7 +110,7 @@ async def _probe_loop() -> None:
 
                 await db.commit()
         except Exception as e:
-            logger.error("Uptime probe DB error: %s", e, exc_info=True)
+            logger.error("Uptime probe error: %s", e, exc_info=True)
 
         await asyncio.sleep(PROBE_INTERVAL)
 
@@ -117,7 +121,15 @@ def start_uptime_monitor() -> None:
     if _running:
         return
     _running = True
-    _task = asyncio.get_event_loop().create_task(_probe_loop())
+    _task = asyncio.create_task(_probe_loop())
+
+    def _on_task_done(task: asyncio.Task) -> None:
+        if task.cancelled():
+            logger.warning("Uptime monitor task was cancelled")
+        elif task.exception():
+            logger.error("Uptime monitor task died: %s", task.exception(), exc_info=task.exception())
+
+    _task.add_done_callback(_on_task_done)
     logger.info("Uptime monitor started (every %ds)", PROBE_INTERVAL)
 
 

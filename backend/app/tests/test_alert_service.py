@@ -7,16 +7,16 @@ from app.models.alert_config import AlertThreshold
 from app.models.alert_event import AlertEvent
 from app.models.ping_test import PingResult
 from app.models.speed_test import SpeedTestResult
-from app.models.test_session import TestSession
+from app.models.test_session import TestSession, TestStatus, TriggerType
 from app.models.wifi_info import WiFiSnapshot
 from app.services.alert_service import evaluate_alerts
 
 
-async def _create_session(db, status="completed"):
+async def _create_session(db, status=TestStatus.COMPLETED):
     session = TestSession(
         started_at=datetime.now(timezone.utc),
         completed_at=datetime.now(timezone.utc),
-        trigger_type="manual",
+        trigger_type=TriggerType.MANUAL,
         status=status,
     )
     db.add(session)

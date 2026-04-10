@@ -1,6 +1,7 @@
+import re
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 
 class TracerouteHopOut(BaseModel):
@@ -33,4 +34,11 @@ class TracerouteDetailOut(TracerouteResultOut):
 
 class TracerouteRunRequest(BaseModel):
     target: str = "8.8.8.8"
-    max_hops: int = 30
+    max_hops: int = Field(default=30, le=64, ge=1)
+
+    @field_validator("target")
+    @classmethod
+    def validate_target(cls, v: str) -> str:
+        if not re.match(r'^[a-zA-Z0-9.\-:]+$', v):
+            raise ValueError("Invalid target: must be an IP address or hostname")
+        return v

@@ -8,7 +8,7 @@ from sqlalchemy import select
 from app.core.ws_manager import ws_manager
 from app.database import AsyncSessionLocal
 from app.models.schedule_config import ScheduleConfig
-from app.models.test_session import TestSession
+from app.models.test_session import TestSession, TestStatus, TriggerType
 from app.services.test_orchestrator import run_full_test, test_lock
 
 logger = logging.getLogger(__name__)
@@ -36,8 +36,8 @@ async def _run_scheduled_test(schedule_id: int) -> None:
 
             session = TestSession(
                 started_at=datetime.now(timezone.utc),
-                trigger_type="scheduled",
-                status="running",
+                trigger_type=TriggerType.SCHEDULED,
+                status=TestStatus.RUNNING,
             )
             db.add(session)
             await db.commit()
@@ -49,7 +49,7 @@ async def _run_scheduled_test(schedule_id: int) -> None:
                 session_id=session.id,
                 db=db,
                 ws_manager=ws_manager,
-                trigger_type="scheduled",
+                trigger_type=TriggerType.SCHEDULED,
                 include_speed=config.include_speed_test,
                 include_ping=config.include_ping_test,
                 include_dns=config.include_dns_test,

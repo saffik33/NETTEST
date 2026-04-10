@@ -1,15 +1,19 @@
+import asyncio
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.ws_manager import ws_manager
 from app.database import AsyncSessionLocal, get_db
-from app.models.test_session import TestSession
+from app.models.test_session import TestSession, TestStatus, TriggerType
 from app.schemas.test_session import TestRunRequest, TestRunResponse, TestSessionOut
 from app.services.test_orchestrator import run_full_test, test_lock
 
+limiter = Limiter(key_func=get_remote_address)
 router = APIRouter(prefix="/tests", tags=["tests"])
 
 
@@ -20,7 +24,7 @@ async def _run_test_session(session_id: int, request: TestRunRequest):
                 session_id=session_id,
                 db=db,
                 ws_manager=ws_manager,
-                trigger_type="manual",
+                trigger_type=TriggerType.MANUAL,
                 include_speed=request.include_speed,
                 include_ping=request.include_ping,
                 include_dns=request.include_dns,
@@ -33,17 +37,18 @@ async def _run_test_session(session_id: int, request: TestRunRequest):
 
 
 @router.post("/run", response_model=TestRunResponse)
-async def run_test(request: TestRunRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
-    if test_lock.locked():
+@limiter.limit("3/minute")
+async def run_test(request: TestRunRequest, background_tasks: BackgroundTasks, req: Request, db: AsyncSession = Depends(get_db)):
+    try:
+        await asyncio.wait_for(test_lock.acquire(), timeout=0.1)
+    except asyncio.TimeoutError:
         raise HTTPException(status_code=409, detail="A test is already running")
-
-    await test_lock.acquire()
 
     try:
         session = TestSession(
             started_at=datetime.now(timezone.utc),
-            trigger_type="manual",
-            status="running",
+            trigger_type=TriggerType.MANUAL,
+            status=TestStatus.RUNNING,
         )
         db.add(session)
         await db.commit()
@@ -54,7 +59,7 @@ async def run_test(request: TestRunRequest, background_tasks: BackgroundTasks, d
         test_lock.release()
         raise
 
-    return TestRunResponse(session_id=session.id, status="running")
+    return TestRunResponse(session_id=session.id, status=TestStatus.RUNNING)
 
 
 @router.get("/sessions", response_model=list[TestSessionOut])

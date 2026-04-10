@@ -55,7 +55,7 @@ async def run_traceroute(
             r"^\s*(\d+)\s+(.+)$"
         )
 
-    while True:
+    while process.stdout:
         line = await process.stdout.readline()
         if not line:
             break
@@ -77,6 +77,34 @@ async def run_traceroute(
                     rtt3_ms=_parse_rtt(match.group(4)),
                     timed_out=timed_out,
                 )
+                result.hops.append(hop)
+                if progress_callback:
+                    await progress_callback(hop)
+        else:
+            match = hop_pattern.match(decoded)
+            if match:
+                hop_num = int(match.group(1))
+                rest = match.group(2).strip()
+
+                if rest == "* * *":
+                    hop = HopData(
+                        hop_number=hop_num,
+                        timed_out=True,
+                    )
+                else:
+                    # Linux format: "10.0.0.1  0.544 ms  0.399 ms  0.372 ms"
+                    ip_match = re.match(r"([\d.]+)\s+", rest)
+                    ip_addr = ip_match.group(1) if ip_match else None
+                    rtt_values = re.findall(r"([\d.]+)\s*ms", rest)
+                    hop = HopData(
+                        hop_number=hop_num,
+                        ip_address=ip_addr,
+                        rtt1_ms=float(rtt_values[0]) if len(rtt_values) > 0 else None,
+                        rtt2_ms=float(rtt_values[1]) if len(rtt_values) > 1 else None,
+                        rtt3_ms=float(rtt_values[2]) if len(rtt_values) > 2 else None,
+                        timed_out=False,
+                    )
+
                 result.hops.append(hop)
                 if progress_callback:
                     await progress_callback(hop)
