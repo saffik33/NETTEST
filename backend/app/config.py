@@ -27,12 +27,21 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_json_fields(self) -> "Settings":
+        # Auto-convert plain strings to JSON arrays for CORS_ORIGINS
+        # Accepts: '["http://example.com"]', 'http://example.com', 'http://a.com,http://b.com'
         try:
-            json.loads(self.CORS_ORIGINS)
-        except (json.JSONDecodeError, TypeError):
-            raise ValueError(
-                f"CORS_ORIGINS must be a JSON array, got: {self.CORS_ORIGINS!r}"
-            )
+            parsed = json.loads(self.CORS_ORIGINS)
+            if not isinstance(parsed, list):
+                raise ValueError
+        except (json.JSONDecodeError, TypeError, ValueError):
+            # Treat as comma-separated origins, add https:// if no scheme
+            origins = [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
+            origins = [
+                f"https://{o}" if not o.startswith(("http://", "https://")) else o
+                for o in origins
+            ]
+            self.CORS_ORIGINS = json.dumps(origins)
+
         try:
             json.loads(self.DEFAULT_DNS_TARGETS)
         except (json.JSONDecodeError, TypeError):
