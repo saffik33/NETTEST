@@ -17,102 +17,112 @@ export interface SpeedTestResult {
 
 type ProgressCallback = (progress: SpeedTestProgress) => void
 
-const TEST_DURATION_MS = 8000  // Test for 8 seconds per direction
-const DOWNLOAD_CHUNK_MB = 25   // Download 25 MB chunks
-const UPLOAD_CHUNK_MB = 5      // Upload 5 MB chunks
+const TEST_DURATION_MS = 10_000  // Test for 10 seconds per direction
+const PARALLEL_STREAMS = 6       // Concurrent connections to saturate the pipe
+const DOWNLOAD_CHUNK_MB = 10     // Per-stream chunk size
+const UPLOAD_CHUNK_MB = 2        // Per-stream upload chunk size
+const WARMUP_MS = 1500           // Discard first 1.5s (TCP slow-start)
 
 /**
- * Measure download speed by fetching test data from the server.
- * Runs multiple concurrent streams for accuracy.
+ * Measure download speed using multiple parallel streams.
+ * This saturates the connection like fast.com / speedtest.net.
  */
 async function measureDownload(onProgress: ProgressCallback): Promise<number> {
-  const measurements: number[] = []
   const startTime = performance.now()
   let totalBytes = 0
+  let running = true
 
-  // Run download test for TEST_DURATION_MS
-  while (performance.now() - startTime < TEST_DURATION_MS) {
-    const chunkStart = performance.now()
-
-    try {
-      const cacheBust = Date.now() + Math.random()
-      const response = await fetch(`/api/speedtest/download?size_mb=${DOWNLOAD_CHUNK_MB}&_=${cacheBust}`)
-      const blob = await response.blob()
-
-      const chunkEnd = performance.now()
-      const chunkTimeSec = (chunkEnd - chunkStart) / 1000
-      const chunkMbps = (blob.size * 8) / (chunkTimeSec * 1_000_000)
-
-      totalBytes += blob.size
-      measurements.push(chunkMbps)
-
-      const elapsed = performance.now() - startTime
-      onProgress({
-        phase: 'download',
-        progress: Math.min(elapsed / TEST_DURATION_MS, 1),
-        currentSpeed: chunkMbps,
-      })
-    } catch {
-      break
+  // Each stream fetches chunks in a loop until time runs out
+  const streamWorker = async () => {
+    while (running && performance.now() - startTime < TEST_DURATION_MS) {
+      try {
+        const cacheBust = Date.now() + Math.random()
+        const response = await fetch(`/api/speedtest/download?size_mb=${DOWNLOAD_CHUNK_MB}&_=${cacheBust}`)
+        const blob = await response.blob()
+        totalBytes += blob.size
+      } catch {
+        break
+      }
     }
   }
 
-  if (measurements.length === 0) return 0
+  // Progress reporter
+  const progressInterval = setInterval(() => {
+    const elapsed = performance.now() - startTime
+    const effectiveElapsed = Math.max(elapsed - WARMUP_MS, 0)
+    const currentMbps = effectiveElapsed > 0
+      ? ((totalBytes * 8) / (effectiveElapsed / 1000)) / 1_000_000
+      : 0
+    onProgress({
+      phase: 'download',
+      progress: Math.min(elapsed / TEST_DURATION_MS, 1),
+      currentSpeed: currentMbps,
+    })
+  }, 250)
 
-  // Use total bytes / total time for overall speed
-  const totalTimeSec = (performance.now() - startTime) / 1000
+  // Launch parallel streams
+  const streams = Array.from({ length: PARALLEL_STREAMS }, () => streamWorker())
+  await Promise.all(streams)
+  running = false
+  clearInterval(progressInterval)
+
+  const totalTimeSec = (performance.now() - startTime - WARMUP_MS) / 1000
+  if (totalTimeSec <= 0) return 0
   return (totalBytes * 8) / (totalTimeSec * 1_000_000)
 }
 
 /**
- * Measure upload speed by sending test data to the server.
+ * Measure upload speed using multiple parallel streams.
  */
 async function measureUpload(onProgress: ProgressCallback): Promise<number> {
-  const measurements: number[] = []
   const startTime = performance.now()
   let totalBytes = 0
+  let running = true
 
-  // Pre-generate upload payload
+  // Pre-generate upload payload (shared across streams)
   const uploadSize = UPLOAD_CHUNK_MB * 1024 * 1024
   const payload = new ArrayBuffer(uploadSize)
-  // Fill with random-ish data to prevent compression
   const view = new Uint32Array(payload)
   for (let i = 0; i < view.length; i++) {
     view[i] = (Math.random() * 0xFFFFFFFF) >>> 0
   }
 
-  while (performance.now() - startTime < TEST_DURATION_MS) {
-    const chunkStart = performance.now()
-
-    try {
-      const response = await fetch('/api/speedtest/upload', {
-        method: 'POST',
-        body: payload,
-        headers: { 'Content-Type': 'application/octet-stream' },
-      })
-      await response.json()
-
-      const chunkEnd = performance.now()
-      const chunkTimeSec = (chunkEnd - chunkStart) / 1000
-      const chunkMbps = (uploadSize * 8) / (chunkTimeSec * 1_000_000)
-
-      totalBytes += uploadSize
-      measurements.push(chunkMbps)
-
-      const elapsed = performance.now() - startTime
-      onProgress({
-        phase: 'upload',
-        progress: Math.min(elapsed / TEST_DURATION_MS, 1),
-        currentSpeed: chunkMbps,
-      })
-    } catch {
-      break
+  const streamWorker = async () => {
+    while (running && performance.now() - startTime < TEST_DURATION_MS) {
+      try {
+        const response = await fetch('/api/speedtest/upload', {
+          method: 'POST',
+          body: payload,
+          headers: { 'Content-Type': 'application/octet-stream' },
+        })
+        await response.json()
+        totalBytes += uploadSize
+      } catch {
+        break
+      }
     }
   }
 
-  if (measurements.length === 0) return 0
+  const progressInterval = setInterval(() => {
+    const elapsed = performance.now() - startTime
+    const effectiveElapsed = Math.max(elapsed - WARMUP_MS, 0)
+    const currentMbps = effectiveElapsed > 0
+      ? ((totalBytes * 8) / (effectiveElapsed / 1000)) / 1_000_000
+      : 0
+    onProgress({
+      phase: 'upload',
+      progress: Math.min(elapsed / TEST_DURATION_MS, 1),
+      currentSpeed: currentMbps,
+    })
+  }, 250)
 
-  const totalTimeSec = (performance.now() - startTime) / 1000
+  const streams = Array.from({ length: PARALLEL_STREAMS }, () => streamWorker())
+  await Promise.all(streams)
+  running = false
+  clearInterval(progressInterval)
+
+  const totalTimeSec = (performance.now() - startTime - WARMUP_MS) / 1000
+  if (totalTimeSec <= 0) return 0
   return (totalBytes * 8) / (totalTimeSec * 1_000_000)
 }
 
