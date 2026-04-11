@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
-import { Lightbulb } from 'lucide-react'
+import { Lightbulb, Wifi, Globe } from 'lucide-react'
 import { wifiApi } from '../api/endpoints'
 import { formatSignal } from '../utils/formatters'
+import { useConnectionInfo } from '../hooks/useConnectionInfo'
 import AnimatedPage from '../components/ui/AnimatedPage'
 import GlassCard from '../components/ui/GlassCard'
 import SummaryCard from '../components/dashboard/SummaryCard'
@@ -9,6 +10,8 @@ import SignalStrengthChart from '../components/charts/SignalStrengthChart'
 import ChannelCongestionChart from '../components/charts/ChannelCongestionChart'
 
 export default function WiFiAnalysisPage() {
+  const connectionInfo = useConnectionInfo()
+
   const { data: current } = useQuery({
     queryKey: ['wifi', 'current'],
     queryFn: () => wifiApi.current().then((r) => r.data),
@@ -33,6 +36,37 @@ export default function WiFiAnalysisPage() {
   return (
     <AnimatedPage>
       <h2 className="text-2xl font-bold tracking-display dark:text-gray-100 text-gray-900">WiFi Analysis</h2>
+
+      {/* Browser Connection Info — works even on cloud deployment */}
+      {connectionInfo && (
+        <GlassCard glow className="dark:border-accent/15 border-accent/15">
+          <div className="flex items-center gap-2 mb-3">
+            <Globe size={18} className="text-accent" />
+            <h3 className="text-sm font-semibold dark:text-accent text-accent-dim">Your Connection (Browser)</h3>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div>
+              <div className="text-xs dark:text-gray-500 text-gray-400">Connection Type</div>
+              <div className="text-lg font-semibold dark:text-gray-100 text-gray-900 flex items-center gap-1.5">
+                <Wifi size={16} className="text-accent" />
+                {connectionInfo.type !== 'unknown' ? connectionInfo.type : connectionInfo.effectiveType.toUpperCase()}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs dark:text-gray-500 text-gray-400">Effective Type</div>
+              <div className="text-lg font-semibold dark:text-gray-100 text-gray-900">{connectionInfo.effectiveType.toUpperCase()}</div>
+            </div>
+            <div>
+              <div className="text-xs dark:text-gray-500 text-gray-400">Est. Bandwidth</div>
+              <div className="text-lg font-semibold dark:text-gray-100 text-gray-900">{connectionInfo.downlink} Mbps</div>
+            </div>
+            <div>
+              <div className="text-xs dark:text-gray-500 text-gray-400">Est. RTT</div>
+              <div className="text-lg font-semibold dark:text-gray-100 text-gray-900">{connectionInfo.rtt} ms</div>
+            </div>
+          </div>
+        </GlassCard>
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <SummaryCard label="SSID" value={current?.ssid || '--'} index={0} />
