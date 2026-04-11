@@ -4,14 +4,26 @@ from sqlalchemy.orm import DeclarativeBase
 
 from app.config import settings
 
-_is_sqlite = "sqlite" in settings.DATABASE_URL
+
+def _normalize_db_url(url: str) -> str:
+    """Convert standard DB URLs to async driver URLs for SQLAlchemy."""
+    # Railway/Heroku provide postgres:// or postgresql:// but async SQLAlchemy needs postgresql+asyncpg://
+    if url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql+asyncpg://", 1)
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    return url
+
+
+_db_url = _normalize_db_url(settings.DATABASE_URL)
+_is_sqlite = "sqlite" in _db_url
 
 engine_kwargs: dict = {"echo": False}
 if not _is_sqlite:
     engine_kwargs["pool_size"] = 5
     engine_kwargs["max_overflow"] = 10
 
-engine = create_async_engine(settings.DATABASE_URL, **engine_kwargs)
+engine = create_async_engine(_db_url, **engine_kwargs)
 AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
