@@ -28,7 +28,7 @@ class TracerouteRunRequest(BaseModel):
 
 @router.post("/run")
 @limiter.limit("5/minute")
-async def run_traceroute_standalone(request: TracerouteRunRequest, req: Request, db: AsyncSession = Depends(get_db)):
+async def run_traceroute_standalone(body: TracerouteRunRequest, request: Request, db: AsyncSession = Depends(get_db)):
     """Run a standalone traceroute to a target host."""
     # Create a minimal test session to satisfy the FK constraint
     session = TestSession(trigger_type=TriggerType.MANUAL, status=TestStatus.RUNNING)
@@ -36,7 +36,7 @@ async def run_traceroute_standalone(request: TracerouteRunRequest, req: Request,
     await db.flush()
 
     try:
-        data = await run_traceroute(target=request.target, max_hops=30)
+        data = await run_traceroute(target=body.target, max_hops=30)
 
         tr = TracerouteResult(
             test_session_id=session.id,

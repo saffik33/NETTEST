@@ -38,7 +38,7 @@ async def _run_test_session(session_id: int, request: TestRunRequest):
 
 @router.post("/run", response_model=TestRunResponse)
 @limiter.limit("3/minute")
-async def run_test(request: TestRunRequest, background_tasks: BackgroundTasks, req: Request, db: AsyncSession = Depends(get_db)):
+async def run_test(body: TestRunRequest, background_tasks: BackgroundTasks, request: Request, db: AsyncSession = Depends(get_db)):
     try:
         await asyncio.wait_for(test_lock.acquire(), timeout=0.1)
     except asyncio.TimeoutError:
@@ -54,7 +54,7 @@ async def run_test(request: TestRunRequest, background_tasks: BackgroundTasks, r
         await db.commit()
         await db.refresh(session)
 
-        background_tasks.add_task(_run_test_session, session.id, request)
+        background_tasks.add_task(_run_test_session, session.id, body)
     except Exception:
         test_lock.release()
         raise
