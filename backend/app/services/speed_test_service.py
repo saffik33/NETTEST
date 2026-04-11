@@ -66,7 +66,7 @@ async def run_speed_test(
             upload_mbps=round(upload_mbps, 2),
             server_name=server.get("name"),
             server_host=server.get("host"),
-            server_id=server.get("id"),
+            server_id=int(server["id"]) if server.get("id") else None,
         )
     except asyncio.TimeoutError:
         logger.error("Speed test timed out after %ds", settings.SPEED_TEST_TIMEOUT)
