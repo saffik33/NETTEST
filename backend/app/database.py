@@ -1,4 +1,4 @@
-from sqlalchemy import event
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -47,7 +47,9 @@ async def get_db():
 
 async def init_database():
     async with engine.begin() as conn:
-        # drop_all ensures columns match current models (e.g. timezone-aware timestamps)
-        # Safe for fresh deployments; remove drop_all once data needs to be preserved
-        await conn.run_sync(Base.metadata.drop_all)
+        if not _is_sqlite:
+            # Nuclear reset for PostgreSQL: CASCADE drops all tables regardless of FK constraints
+            # Safe for fresh deployments; remove once data needs to be preserved
+            await conn.execute(text("DROP SCHEMA public CASCADE"))
+            await conn.execute(text("CREATE SCHEMA public"))
         await conn.run_sync(Base.metadata.create_all)
