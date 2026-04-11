@@ -17,11 +17,11 @@ export interface SpeedTestResult {
 
 type ProgressCallback = (progress: SpeedTestProgress) => void
 
-const TEST_DURATION_MS = 10_000  // Test for 10 seconds per direction
-const PARALLEL_STREAMS = 6       // Concurrent connections to saturate the pipe
-const DOWNLOAD_CHUNK_MB = 10     // Per-stream chunk size
-const UPLOAD_CHUNK_MB = 2        // Per-stream upload chunk size
-const WARMUP_MS = 1500           // Discard first 1.5s (TCP slow-start)
+const TEST_DURATION_MS = 12_000  // Test for 12 seconds per direction
+const PARALLEL_STREAMS = 8       // Concurrent connections to saturate the pipe
+const DOWNLOAD_CHUNK_MB = 25     // Larger chunks = less HTTP overhead on high-latency links
+const UPLOAD_CHUNK_MB = 4        // Larger upload chunks for remote servers
+const WARMUP_MS = 2000           // Discard first 2s (TCP slow-start over long routes)
 
 /**
  * Measure download speed using multiple parallel streams.
@@ -30,6 +30,8 @@ const WARMUP_MS = 1500           // Discard first 1.5s (TCP slow-start)
 async function measureDownload(onProgress: ProgressCallback): Promise<number> {
   const startTime = performance.now()
   let totalBytes = 0
+  let warmupBytes = 0
+  let warmupDone = false
   let running = true
 
   // Each stream fetches chunks in a loop until time runs out
@@ -40,6 +42,10 @@ async function measureDownload(onProgress: ProgressCallback): Promise<number> {
         const response = await fetch(`/api/speedtest/download?size_mb=${DOWNLOAD_CHUNK_MB}&_=${cacheBust}`)
         const blob = await response.blob()
         totalBytes += blob.size
+        if (!warmupDone && performance.now() - startTime >= WARMUP_MS) {
+          warmupBytes = totalBytes
+          warmupDone = true
+        }
       } catch {
         break
       }
@@ -49,10 +55,9 @@ async function measureDownload(onProgress: ProgressCallback): Promise<number> {
   // Progress reporter
   const progressInterval = setInterval(() => {
     const elapsed = performance.now() - startTime
-    const effectiveElapsed = Math.max(elapsed - WARMUP_MS, 0)
-    const currentMbps = effectiveElapsed > 0
-      ? ((totalBytes * 8) / (effectiveElapsed / 1000)) / 1_000_000
-      : 0
+    const measuredBytes = warmupDone ? totalBytes - warmupBytes : 0
+    const measuredTime = warmupDone ? (elapsed - WARMUP_MS) / 1000 : 0
+    const currentMbps = measuredTime > 0 ? (measuredBytes * 8) / (measuredTime * 1_000_000) : 0
     onProgress({
       phase: 'download',
       progress: Math.min(elapsed / TEST_DURATION_MS, 1),
@@ -66,9 +71,11 @@ async function measureDownload(onProgress: ProgressCallback): Promise<number> {
   running = false
   clearInterval(progressInterval)
 
-  const totalTimeSec = (performance.now() - startTime - WARMUP_MS) / 1000
-  if (totalTimeSec <= 0) return 0
-  return (totalBytes * 8) / (totalTimeSec * 1_000_000)
+  // Only count bytes transferred AFTER warmup for accurate measurement
+  const measuredBytes = totalBytes - warmupBytes
+  const measuredTimeSec = (performance.now() - startTime - WARMUP_MS) / 1000
+  if (measuredTimeSec <= 0 || measuredBytes <= 0) return 0
+  return (measuredBytes * 8) / (measuredTimeSec * 1_000_000)
 }
 
 /**
@@ -77,6 +84,8 @@ async function measureDownload(onProgress: ProgressCallback): Promise<number> {
 async function measureUpload(onProgress: ProgressCallback): Promise<number> {
   const startTime = performance.now()
   let totalBytes = 0
+  let warmupBytes = 0
+  let warmupDone = false
   let running = true
 
   // Pre-generate upload payload (shared across streams)
@@ -97,6 +106,10 @@ async function measureUpload(onProgress: ProgressCallback): Promise<number> {
         })
         await response.json()
         totalBytes += uploadSize
+        if (!warmupDone && performance.now() - startTime >= WARMUP_MS) {
+          warmupBytes = totalBytes
+          warmupDone = true
+        }
       } catch {
         break
       }
@@ -105,10 +118,9 @@ async function measureUpload(onProgress: ProgressCallback): Promise<number> {
 
   const progressInterval = setInterval(() => {
     const elapsed = performance.now() - startTime
-    const effectiveElapsed = Math.max(elapsed - WARMUP_MS, 0)
-    const currentMbps = effectiveElapsed > 0
-      ? ((totalBytes * 8) / (effectiveElapsed / 1000)) / 1_000_000
-      : 0
+    const measuredBytes = warmupDone ? totalBytes - warmupBytes : 0
+    const measuredTime = warmupDone ? (elapsed - WARMUP_MS) / 1000 : 0
+    const currentMbps = measuredTime > 0 ? (measuredBytes * 8) / (measuredTime * 1_000_000) : 0
     onProgress({
       phase: 'upload',
       progress: Math.min(elapsed / TEST_DURATION_MS, 1),
@@ -121,9 +133,10 @@ async function measureUpload(onProgress: ProgressCallback): Promise<number> {
   running = false
   clearInterval(progressInterval)
 
-  const totalTimeSec = (performance.now() - startTime - WARMUP_MS) / 1000
-  if (totalTimeSec <= 0) return 0
-  return (totalBytes * 8) / (totalTimeSec * 1_000_000)
+  const measuredBytes = totalBytes - warmupBytes
+  const measuredTimeSec = (performance.now() - startTime - WARMUP_MS) / 1000
+  if (measuredTimeSec <= 0 || measuredBytes <= 0) return 0
+  return (measuredBytes * 8) / (measuredTimeSec * 1_000_000)
 }
 
 /**
