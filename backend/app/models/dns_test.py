@@ -16,6 +16,6 @@ class DNSResult(Base):
     resolved_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
     dns_server: Mapped[str | None] = mapped_column(String(45), nullable=True)
     success: Mapped[bool] = mapped_column(Boolean, nullable=False)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now(), index=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)
 
     test_session = relationship("TestSession", back_populates="dns_results")

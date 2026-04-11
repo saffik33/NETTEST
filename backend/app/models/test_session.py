@@ -23,8 +23,8 @@ class TestSession(Base):
     __tablename__ = "test_sessions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now(), index=True)
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     trigger_type: Mapped[str] = mapped_column(String(20), nullable=False, default=TriggerType.MANUAL)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default=TestStatus.RUNNING)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -19,6 +19,6 @@ class PingResult(Base):
     packet_loss_pct: Mapped[float] = mapped_column(Float, nullable=False)
     packets_sent: Mapped[int] = mapped_column(Integer, nullable=False)
     packets_received: Mapped[int] = mapped_column(Integer, nullable=False)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now(), index=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)
 
     test_session = relationship("TestSession", back_populates="ping_results")

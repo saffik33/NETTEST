@@ -20,6 +20,6 @@ class AlertEvent(Base):
     notified_browser: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     notified_email: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     acknowledged: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    triggered_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now(), index=True)
+    triggered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)
 
     threshold = relationship("AlertThreshold", back_populates="events")

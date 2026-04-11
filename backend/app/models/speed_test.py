@@ -16,6 +16,6 @@ class SpeedTestResult(Base):
     server_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     server_host: Mapped[str | None] = mapped_column(String(255), nullable=True)
     server_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now(), index=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)
 
     test_session = relationship("TestSession", back_populates="speed_results")

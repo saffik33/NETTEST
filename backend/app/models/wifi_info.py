@@ -22,6 +22,6 @@ class WiFiSnapshot(Base):
     rx_rate_mbps: Mapped[float | None] = mapped_column(Float, nullable=True)
     tx_rate_mbps: Mapped[float | None] = mapped_column(Float, nullable=True)
     channel_utilization_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now(), index=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)
 
     test_session = relationship("TestSession", back_populates="wifi_snapshots")

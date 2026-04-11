@@ -14,7 +14,7 @@ class TracerouteResult(Base):
     target_host: Mapped[str] = mapped_column(String(255), nullable=False)
     total_hops: Mapped[int] = mapped_column(Integer, nullable=False)
     completed: Mapped[bool] = mapped_column(Boolean, nullable=False)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now(), index=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)
 
     test_session = relationship("TestSession", back_populates="traceroute_results")
     hops = relationship("TracerouteHop", back_populates="traceroute", cascade="all, delete-orphan", order_by="TracerouteHop.hop_number")

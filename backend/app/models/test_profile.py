@@ -25,4 +25,4 @@ class TestProfile(Base):
     include_device_scan: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # Metadata
     is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())

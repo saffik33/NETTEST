@@ -47,4 +47,7 @@ async def get_db():
 
 async def init_database():
     async with engine.begin() as conn:
+        # drop_all ensures columns match current models (e.g. timezone-aware timestamps)
+        # Safe for fresh deployments; remove drop_all once data needs to be preserved
+        await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)

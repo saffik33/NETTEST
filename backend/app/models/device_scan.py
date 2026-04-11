@@ -12,7 +12,7 @@ class DeviceScan(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     test_session_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("test_sessions.id"), nullable=True, index=True)
     device_count: Mapped[int] = mapped_column(Integer, nullable=False)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now(), index=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)
 
     test_session = relationship("TestSession", back_populates="device_scans")
     devices = relationship("DiscoveredDevice", back_populates="scan", cascade="all, delete-orphan")
